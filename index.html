@@ -61,6 +61,7 @@
     <div>γ: <span id="dbg-gamma">null</span></div>
     <div>scrOri: <span id="dbg-screenOri">0</span></div>
     <div>Quat: <span id="dbg-quat">0,0,0,1</span></div>
+    <div>Offset: <span id="dbg-offset" class="dbg-warn">pending...</span></div>
     <div>Frame: <span id="dbg-frame">0</span></div>
 </div>
 
@@ -135,6 +136,13 @@ class VRApp {
     }
 
     init() {
+        // ----------------------------------------------------------------
+        // [FIX 4] Start時の基準姿勢をリセット
+        //   初回センサーフレームで基準クォータニオンを取得し、
+        //   以降は相対回転だけをカメラに適用する。
+        // ----------------------------------------------------------------
+        this._initialQInv = null;
+
         this.initScene();
         this.initLights();
         this.initEnvironment();
@@ -274,37 +282,85 @@ class VRApp {
         window.addEventListener('touchend', () => { this.mouse.isDown = false; });
     }
 
+    // ----------------------------------------------------------------
+    // [FIX 3] デバイス姿勢クォータニオンの計算（Three.js 公式準拠）
+    //
+    // 旧実装の問題：乗算順序が  qAlign × q_euler × qScreen  だった。
+    //   qAlign（座標系補正）を先に掛けると、その後の q_euler が
+    //   補正済み空間に適用されてしまい、Yaw が正しく機能しない。
+    //
+    // 正しい順序： q_euler × qAlign × qScreen
+    //   1. q_euler  : デバイスの絶対姿勢（世界座標系）
+    //   2. qAlign   : カメラ座標系への変換（X軸 -90°）
+    //                 デバイスは「上面が+Y」だが Three.js カメラは
+    //                 「奥が-Z」なので、この補正で正しくマッピングされる。
+    //   3. qScreen  : 画面回転（Portrait/Landscape）の補正
+    //
+    // これは Three.js 公式 DeviceOrientationControls と同一の実装。
+    // ----------------------------------------------------------------
+    _computeDeviceQ(alpha, beta, gamma, orient) {
+        // Euler: デバイスの Z-X'-Y'' 回転を Three.js の YXZ 順に変換
+        const euler = new THREE.Euler();
+        euler.set(beta, alpha, -gamma, 'YXZ');
+
+        // ① デバイス絶対姿勢
+        const q = new THREE.Quaternion();
+        q.setFromEuler(euler);
+
+        // ② X軸 -90° 補正
+        //    Quaternion(-√0.5, 0, 0, √0.5) == setFromAxisAngle(X, -PI/2) と等価
+        //    Three.js 公式コードとまったく同じ定数を使用する。
+        const qAlign = new THREE.Quaternion(-Math.SQRT1_2, 0, 0, Math.SQRT1_2);
+        q.multiply(qAlign);
+
+        // ③ 画面向き補正（Portrait=0°, Landscape=90° or -90°）
+        const qScreen = new THREE.Quaternion();
+        qScreen.setFromAxisAngle(new THREE.Vector3(0, 0, 1), -orient);
+        q.multiply(qScreen);
+
+        return q;
+    }
+
     updateCameraRotation() {
         if (this.hasGyro && this.deviceOrientation.alpha !== undefined) {
-            // [FIX 2] null check で 0° を正しく処理
             const toRad = THREE.MathUtils.degToRad;
             const alpha  = this.deviceOrientation.alpha != null ? toRad(this.deviceOrientation.alpha) : 0;
             const beta   = this.deviceOrientation.beta  != null ? toRad(this.deviceOrientation.beta)  : 0;
             const gamma  = this.deviceOrientation.gamma != null ? toRad(this.deviceOrientation.gamma) : 0;
-            const scrOri = this.screenOrientation       != null ? toRad(this.screenOrientation)       : 0;
+            const orient = this.screenOrientation       != null ? toRad(this.screenOrientation)       : 0;
 
-            const euler = new THREE.Euler();
-            euler.set(beta, alpha, -gamma, 'YXZ');
+            // 正しい順序で絶対姿勢クォータニオンを計算
+            const deviceQ = this._computeDeviceQ(alpha, beta, gamma, orient);
 
-            const q0 = new THREE.Quaternion().setFromEuler(euler);
-            const q1 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -scrOri);
-            const qAlign = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+            // ----------------------------------------------------------------
+            // [FIX 4] 初期オフセット補正（相対ヘディング）
+            //
+            // Start時点の姿勢を基準（正面）にするため、
+            // 最初のセンサーフレームで q_initial の逆数を保存し、
+            // 毎フレーム  camera.quaternion = q_initial⁻¹ × q_current  を適用する。
+            //
+            // q_current == q_initial のとき → identity（カメラ無回転 = 正面）
+            // q_current が q_initial から Δ回転したとき → カメラも Δ回転
+            // ----------------------------------------------------------------
+            if (!this._initialQInv) {
+                // 初回フレーム：この瞬間の向きを「正面」として記録
+                this._initialQInv = deviceQ.clone().invert();
+            }
 
+            // 相対クォータニオン = 初期逆 × 現在
             this.camera.quaternion
-                .copy(qAlign)
-                .multiply(q0)
-                .multiply(q1);
+                .copy(this._initialQInv)
+                .multiply(deviceQ);
 
         } else {
             // ジャイロなし → スワイプ操作
             const phi   = THREE.MathUtils.degToRad(90 - this.mouse.y);
             const theta = THREE.MathUtils.degToRad(this.mouse.x + 180);
-            const t = new THREE.Vector3(
+            this.camera.lookAt(new THREE.Vector3(
                 Math.sin(phi) * Math.sin(theta),
                 Math.cos(phi),
                 Math.sin(phi) * Math.cos(theta)
-            );
-            this.camera.lookAt(t);
+            ));
         }
     }
 
@@ -380,6 +436,13 @@ class VRApp {
         document.getElementById('dbg-quat').textContent =
             `${q.x.toFixed(2)},${q.y.toFixed(2)},${q.z.toFixed(2)},${q.w.toFixed(2)}`;
         document.getElementById('dbg-frame').textContent = this.debug.frameCount;
+
+        // 初期オフセット取得状況
+        const offEl = document.getElementById('dbg-offset');
+        if (offEl) {
+            offEl.textContent = this._initialQInv ? 'SET ✅' : 'pending...';
+            offEl.className   = this._initialQInv ? 'dbg-ok' : 'dbg-warn';
+        }
     }
 
     animate() {
