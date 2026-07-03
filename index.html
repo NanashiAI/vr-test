@@ -3,75 +3,81 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>VR Cardboard MVP</title>
+    <title>VR Game Base</title>
     <style>
         /* ============================================================
            Reset & Base
            ============================================================ */
         *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            background: #000;
-            overflow: hidden;
+            background: #000; overflow: hidden;
             font-family: 'Helvetica Neue', Arial, sans-serif;
             -webkit-user-select: none; user-select: none;
             touch-action: none; /* ピンチ・スクロール無効（VR操作優先） */
         }
 
         /* ============================================================
-           VR Canvas
+           Canvas & Cardboard 分割線
            ============================================================ */
         #vr-container { position: fixed; inset: 0; }
-
-        /* Cardboard レンズ境界線（中央の黒帯） */
         #vr-divider {
-            position: fixed; top: 0; left: 50%;
-            transform: translateX(-50%);
-            width: 4px; height: 100%;
-            background: #000;
-            z-index: 5; pointer-events: none;
+            position: fixed; top: 0; left: 50%; transform: translateX(-50%);
+            width: 4px; height: 100%; background: #000;
+            z-index: 5; pointer-events: none; display: none;
         }
 
         /* ============================================================
-           Welcome Modal
+           通常モード HUD（下部）
            ============================================================ */
-        #welcome-modal {
-            position: fixed; inset: 0;
-            background: rgba(8, 10, 20, 0.97);
-            display: flex; flex-direction: column;
-            justify-content: center; align-items: center;
-            color: #fff; z-index: 100;
-            text-align: center; padding: 28px;
+        #hud-normal {
+            position: fixed; bottom: 0; left: 0; right: 0;
+            display: flex; flex-direction: column; align-items: center;
+            padding: 18px 20px 30px;
+            background: linear-gradient(transparent, rgba(0,0,0,0.6));
+            z-index: 20; gap: 10px; pointer-events: none;
         }
-        #welcome-modal h2 { font-size: 24px; letter-spacing: 1px; margin-bottom: 6px; }
-        #welcome-modal p  { font-size: 13px; color: #999; margin: 3px 0; }
-        #https-status     { font-size: 14px; margin: 14px 0 4px; }
-        .start-btn {
+        #hint-text { color: rgba(255,255,255,0.5); font-size: 12px; letter-spacing: 0.5px; }
+        #btn-vr-start {
             background: #e63; color: #fff; border: none;
-            padding: 14px 40px; font-size: 17px;
-            border-radius: 30px; cursor: pointer;
-            margin-top: 20px;
-            box-shadow: 0 4px 16px rgba(230,100,50,0.45);
+            padding: 13px 36px; font-size: 16px; border-radius: 28px;
+            cursor: pointer; pointer-events: all;
+            box-shadow: 0 4px 16px rgba(230,100,50,0.5);
             font-weight: bold; letter-spacing: 1px;
             transition: background 0.2s, transform 0.1s;
         }
-        .start-btn:active { background: #c42; transform: scale(0.97); }
+        #btn-vr-start:active { background: #c42; transform: scale(0.96); }
 
         /* ============================================================
-           縦画面プロンプト
+           VRモード HUD（上部右側・自動フェード）
+           ============================================================ */
+        #hud-vr {
+            position: fixed; top: 0; left: 0; right: 0;
+            display: none; justify-content: flex-end;
+            padding: 14px 16px; z-index: 20; pointer-events: none;
+        }
+        #btn-vr-exit {
+            background: rgba(255,255,255,0.18); color: #fff;
+            border: 1px solid rgba(255,255,255,0.35);
+            padding: 8px 18px; font-size: 13px; border-radius: 20px;
+            cursor: pointer; pointer-events: all;
+            backdrop-filter: blur(4px);
+            transition: opacity 0.6s ease;
+        }
+
+        /* ============================================================
+           縦画面プロンプト（VRモード中 Portrait 時）
            ============================================================ */
         #rotate-prompt {
-            position: fixed; inset: 0;
-            background: rgba(0, 0, 0, 0.95);
-            display: none; /* JS で flex に切替 */
-            flex-direction: column;
+            position: fixed; inset: 0; background: rgba(0,0,0,0.95);
+            display: none; flex-direction: column;
             justify-content: center; align-items: center;
             color: #fff; z-index: 90; text-align: center;
         }
         #rotate-prompt .icon {
-            font-size: 64px; margin-bottom: 16px;
-            animation: rotate-hint 2.5s ease-in-out infinite;
+            font-size: 60px; margin-bottom: 16px;
+            animation: spin-hint 2.5s ease-in-out infinite;
         }
-        @keyframes rotate-hint {
+        @keyframes spin-hint {
             0%, 100% { transform: rotate(0deg); }
             50%       { transform: rotate(90deg); }
         }
@@ -79,29 +85,14 @@
         #rotate-prompt .sub   { font-size: 13px; color: #888; }
 
         /* ============================================================
-           Fullscreen 通知
+           Toast 通知（エラー・情報）
            ============================================================ */
-        #fs-notice {
-            position: fixed; bottom: 50px; left: 50%;
-            transform: translateX(-50%);
-            background: rgba(30, 80, 200, 0.9); color: #fff;
-            padding: 10px 18px; border-radius: 8px;
-            font-size: 13px; z-index: 50;
-            text-align: center; max-width: 90vw; line-height: 1.65;
-            display: none;
-        }
-
-        /* ============================================================
-           HTTPS 警告
-           ============================================================ */
-        #https-banner {
-            position: fixed; bottom: 50px; left: 50%;
-            transform: translateX(-50%);
-            background: rgba(200, 50, 0, 0.92); color: #fff;
-            padding: 10px 18px; border-radius: 8px;
-            font-size: 13px; z-index: 50;
-            text-align: center; max-width: 90vw; line-height: 1.65;
-            display: none;
+        #toast {
+            position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
+            background: rgba(20,20,20,0.92); color: #fff;
+            padding: 10px 18px; border-radius: 8px; font-size: 13px;
+            z-index: 80; max-width: 88vw; text-align: center; line-height: 1.6;
+            opacity: 0; transition: opacity 0.4s; pointer-events: none;
         }
 
         /* ============================================================
@@ -109,12 +100,11 @@
            ============================================================ */
         #debug-panel {
             position: fixed; top: 8px; left: 8px;
-            background: rgba(0, 0, 0, 0.85);
-            color: #0f0; padding: 8px 12px; border-radius: 5px;
+            background: rgba(0,0,0,0.87); color: #0f0;
+            padding: 8px 12px; border-radius: 5px;
             font-family: monospace; font-size: 11px; line-height: 1.75;
-            z-index: 1000; pointer-events: none;
-            border: 1px solid rgba(0, 200, 0, 0.35);
-            display: none; /* JS で制御 */
+            z-index: 100; pointer-events: none;
+            border: 1px solid rgba(0,200,0,0.3); display: none;
         }
         .dbg-ok   { color: #4f4; }
         .dbg-warn { color: #ff0; }
@@ -124,47 +114,43 @@
 </head>
 <body>
 
-<!-- ==================== VR Canvas ==================== -->
+<!-- ===== Canvas ===== -->
 <div id="vr-container"></div>
 <div id="vr-divider"></div>
 
-<!-- ==================== Welcome Modal ==================== -->
-<div id="welcome-modal">
-    <h2>VR Cardboard MVP</h2>
-    <p>Google Cardboard に入れてご体験ください</p>
-    <p>横画面推奨 · GitHub Pages (HTTPS) で動作</p>
-    <div id="https-status">確認中...</div>
-    <button class="start-btn" id="start-btn">▶ VR を開始する</button>
+<!-- ===== 通常モード HUD ===== -->
+<div id="hud-normal">
+    <p id="hint-text">スワイプ / ジャイロで見回せます</p>
+    <button id="btn-vr-start">🥽 VR 開始</button>
 </div>
 
-<!-- ==================== 縦画面プロンプト ==================== -->
+<!-- ===== VRモード HUD ===== -->
+<div id="hud-vr">
+    <button id="btn-vr-exit">✕ 通常に戻る</button>
+</div>
+
+<!-- ===== 縦画面プロンプト ===== -->
 <div id="rotate-prompt">
     <div class="icon">📱</div>
-    <div class="title">スマートフォンを横向きにしてください</div>
+    <div class="title">横向きにしてください</div>
     <div class="sub">Google Cardboard は横画面で使用します</div>
 </div>
 
-<!-- ==================== 各種通知 ==================== -->
-<div id="fs-notice">
-    URLバーを非表示にするには<br>
-    ブラウザメニュー → 「全画面表示」を選択してください
-</div>
-<div id="https-banner">
-    ⚠️ file:// で開いています。センサーは HTTPS が必要です。<br>
-    GitHub Pages / Netlify などにホストしてください。
-</div>
+<!-- ===== Toast ===== -->
+<div id="toast"></div>
 
-<!-- ==================== Debug Panel ==================== -->
+<!-- ===== Debug Panel ===== -->
 <div id="debug-panel">
-    <div>🔒 HTTPS : <span id="dbg-https">-</span></div>
-    <div>Evt    : <span id="dbg-events">0</span> [<span id="dbg-evtype">-</span>]</div>
-    <div>Gyro   : <span id="dbg-hasGyro" class="dbg-warn">false</span></div>
-    <div>α/β/γ : <span id="dbg-alpha">-</span> / <span id="dbg-beta">-</span> / <span id="dbg-gamma">-</span></div>
-    <div>scrOri : <span id="dbg-screenOri">0</span></div>
-    <div>Offset : <span id="dbg-offset" class="dbg-warn">pending</span></div>
-    <div>Quat   : <span id="dbg-quat">0,0,0,1</span></div>
-    <div>Gaze   : <span id="dbg-gaze">-</span></div>
-    <div>Frame  : <span id="dbg-frame">0</span></div>
+    <div>MODE  : <span id="dbg-mode">-</span></div>
+    <div>HTTPS : <span id="dbg-https">-</span></div>
+    <div>Evt   : <span id="dbg-events">0</span> [<span id="dbg-evtype">-</span>]</div>
+    <div>Gyro  : <span id="dbg-hasGyro" class="dbg-warn">false</span></div>
+    <div>α/β/γ : <span id="dbg-alpha">-</span>/<span id="dbg-beta">-</span>/<span id="dbg-gamma">-</span></div>
+    <div>scrOri: <span id="dbg-screenOri">0</span></div>
+    <div>Offset: <span id="dbg-offset" class="dbg-warn">pending</span></div>
+    <div>Quat  : <span id="dbg-quat">0,0,0,1</span></div>
+    <div>Gaze  : <span id="dbg-gaze">-</span></div>
+    <div>Frame : <span id="dbg-frame">0</span></div>
 </div>
 
 <script>
@@ -175,35 +161,48 @@
 //   この 1 オブジェクトを編集するだけでアプリの動作を変更できます。
 // ================================================================
 const CONFIG = Object.freeze({
+    // [モード]
+    DEFAULT_MODE        : 'normal', // ページ開始時のモード: 'normal' | 'vr'
+
     // [デバッグ]
-    DEBUG               : false,   // true にするとデバッグパネルを表示
+    DEBUG               : false,    // true にするとデバッグパネルを表示
+
+    // [機能フラグ]
+    ENABLE_GYRO         : true,     // ジャイロ有効
+    ENABLE_TOUCH        : true,     // スワイプ・マウス有効
+    ENABLE_STEREO       : true,     // VRモードでステレオ描画を有効
+    ENABLE_FULLSCREEN   : true,     // VR開始時に Fullscreen をリクエスト
 
     // [カメラ]
-    CAMERA_FOV          : 70,      // 視野角 (deg) ※Cardboard は 60〜75 が目安
-    NEAR_CLIP           : 0.1,     // ニアクリップ距離 (m)
-    FAR_CLIP            : 1000,    // ファークリップ距離 (m)
+    CAMERA_FOV          : 70,       // 視野角 (deg) ※Cardboard: 60〜75 が目安
+    NEAR_CLIP           : 0.1,
+    FAR_CLIP            : 1000,
 
     // [ステレオ立体視]
-    STEREO_EYE_SEP      : 0.064,   // 瞳孔間距離 (m) ※標準 64mm / 0.060〜0.070 で調整
+    STEREO_EYE_SEP      : 0.064,   // 瞳孔間距離 (m) ※0.060〜0.070 で調整
 
     // [Gaze（視線操作）]
     GAZE_DWELL_TIME     : 2000,    // 視線を向け続ける時間 (ms)
-    RETICLE_DISTANCE    : 2.5,     // レティクルの表示距離 (m)
+    RETICLE_DISTANCE    : 2.5,     // レティクル表示距離 (m)
     RETICLE_INNER_R     : 0.012,   // レティクル内径 (m)
     RETICLE_OUTER_R     : 0.022,   // レティクル外径 (m)
 
     // [オブジェクト]
-    OBJECT_DISTANCE     : 10,      // オブジェクト配置距離 (m) ※旧 5→10 で酔いにくく
-    CUBE_SPIN_SPEED     : 0.005,   // 立方体の自転速度 (rad/frame)
+    OBJECT_DISTANCE     : 10,      // オブジェクト配置距離 (m)
+    CUBE_SPIN_SPEED     : 0.005,   // 自転速度 (rad/frame)
 
     // [ポップアップ（3D）]
     POPUP_DISTANCE      : 2.5,     // カメラからの距離 (m)
-    POPUP_WIDTH         : 1.2,     // ポップアップ幅 (m)
-    POPUP_HEIGHT        : 0.32,    // ポップアップ高さ (m)
+    POPUP_WIDTH         : 1.2,
+    POPUP_HEIGHT        : 0.32,
     POPUP_Y_OFFSET      : 0.22,    // 上方向オフセット (m)
 
     // [スカイボックス]
-    SKYBOX_SIZE         : 100,     // スカイボックスサイズ (m)
+    SKYBOX_SIZE         : 100,
+
+    // [UI]
+    VR_EXIT_HIDE_DELAY  : 3000,    // VR終了ボタン自動非表示までの時間 (ms)
+    TOAST_DURATION      : 4500,    // Toast 表示時間 (ms)
 });
 
 // ================================================================
@@ -216,425 +215,369 @@ const IS_SECURE = (
     location.hostname === '127.0.0.1'
 );
 
-// モーダル内ステータス表示
-(() => {
-    const el = document.getElementById('https-status');
-    if (IS_SECURE) {
-        el.innerHTML = '✅ <span style="color:#6f6">HTTPS OK — ジャイロ利用可能</span>';
-    } else {
-        el.innerHTML = '❌ <span style="color:#f66">HTTPS 未使用 — センサー無効（スワイプのみ動作）</span>';
-        document.getElementById('https-banner').style.display = 'block';
-    }
-    if (CONFIG.DEBUG) {
-        document.getElementById('debug-panel').style.display = 'block';
-    }
-})();
+// Debug パネル初期表示
+if (CONFIG.DEBUG) {
+    document.getElementById('debug-panel').style.display = 'block';
+}
 
 // ================================================================
-// ■ STATE — 実行時の変動状態（CONFIG とは分離）
+// ■ GyroController — デバイス姿勢センサー管理
 // ================================================================
-const STATE = {
-    gazeTarget      : null,
-    gazeStartTime   : 0,
-    isGazeTriggered : false,
-    cardboardBtnCB  : null,  // Cardboard ボタンのカスタムコールバック登録用
-                             // 例: STATE.cardboardBtnCB = (type) => { ... }
-};
-
-// ================================================================
-// ■ VRApp — メインアプリケーションクラス
-//   Java 的な構成: initXxx / updateXxx / renderXxx で明確に分類
-// ================================================================
-class VRApp {
-
+class GyroController {
     constructor() {
-        // --- Three.js core ---
-        this.scene          = null;
-        this.camera         = null;       // 主カメラ（姿勢計算・レイキャスト共用）
-        this.stereoCamera   = null;       // THREE.StereoCamera（立体視計算）
-        this.renderer       = null;
-        this.raycaster      = new THREE.Raycaster();
-        this.centerVec      = new THREE.Vector2(0, 0); // 常に画面中心
-
-        // --- Scene objects ---
-        this.interactiveObjects = [];
-        this.cube               = null;
-        this.reticle3D          = null;   // 3D レティクル（外側リング）
-        this.reticleDot         = null;   // 3D レティクル（中心ドット）
-        this.popupMesh          = null;   // 3D ポップアップ
-        this.popupCanvas        = null;
-        this.popupTexture       = null;
-
-        // --- Gyro / Orientation ---
-        this.deviceOrientation  = {};
-        this.screenOrientation  = 0;
-        this.hasGyro            = false;
-        this._initialQInv       = null;   // Start 時基準姿勢の逆クォータニオン
-
-        // --- Mouse / Touch フォールバック（ジャイロなし時） ---
-        this.mouse = { x: 0, y: 0, isDown: false, prevX: 0, prevY: 0 };
-
-        // --- Debug カウンタ ---
-        this._dbg = { eventCount: 0, frameCount: 0, lastEventType: '-' };
+        this.hasGyro      = false;
+        this._data        = {};       // { alpha, beta, gamma }
+        this._screenOri   = 0;
+        this._initialQInv = null;     // Start 時基準の逆クォータニオン
+        this._evType      = '-';
+        this._evCount     = 0;
     }
 
-    // ============================================================
-    //  [INITIALIZATION] 起動エントリポイント
-    //   init() を呼ぶだけでアプリが起動する
-    // ============================================================
-
+    /** センサーイベントリスナーを登録 */
     init() {
-        this._initialQInv = null; // Start 毎に基準姿勢をリセット
-
-        this._initScene();
-        this._initLights();
-        this._initSkybox();
-        this._initObjects();
-        this._initReticle();
-        this._initPopup();
-        this._initGyro();
-        this._initInputHandlers();
-        this._initResize();
-        this._animate();
-    }
-
-    /** Three.js シーン / カメラ / レンダラーの初期化 */
-    _initScene() {
-        this.scene = new THREE.Scene();
-
-        // 主カメラ（姿勢計算とレイキャストに使用）
-        this.camera = new THREE.PerspectiveCamera(
-            CONFIG.CAMERA_FOV,
-            window.innerWidth / window.innerHeight,
-            CONFIG.NEAR_CLIP,
-            CONFIG.FAR_CLIP
-        );
-        this.camera.position.set(0, 0, 0);
-        // カメラをシーンへ追加（3D 子オブジェクトを描画させるため）
-        this.scene.add(this.camera);
+        if (!CONFIG.ENABLE_GYRO) return;
 
         // -------------------------------------------------------
-        // THREE.StereoCamera — 本当の立体視
-        // -------------------------------------------------------
-        // 主カメラの position / quaternion / FOV を受け取り、
-        // 左右の目に対応した cameraL / cameraR を eyeSep 分オフセットして自動生成。
-        // 旧実装（同一映像を左右に複製）と異なり、正しく視差が生まれる。
-        // -------------------------------------------------------
-        this.stereoCamera = new THREE.StereoCamera();
-        this.stereoCamera.eyeSep = CONFIG.STEREO_EYE_SEP;
-
-        this.renderer = new THREE.WebGLRenderer({ antialias: true });
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        this.renderer.autoClear = false; // ステレオ描画で手動クリア
-        document.getElementById('vr-container').appendChild(this.renderer.domElement);
-    }
-
-    /** 照明の初期化 */
-    _initLights() {
-        this.scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-        const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-        dir.position.set(5, 10, 7);
-        this.scene.add(dir);
-    }
-
-    /** スカイボックス（6面カラー — 方向確認用） */
-    _initSkybox() {
-        const geo = new THREE.BoxGeometry(CONFIG.SKYBOX_SIZE, CONFIG.SKYBOX_SIZE, CONFIG.SKYBOX_SIZE);
-        // 各面に異なる色 → 向き確認が容易になる
-        const mats = [
-            new THREE.MeshBasicMaterial({ color: 0xffdd00, side: THREE.BackSide }), // 右 (East)  黄
-            new THREE.MeshBasicMaterial({ color: 0x00cc44, side: THREE.BackSide }), // 左 (West)  緑
-            new THREE.MeshBasicMaterial({ color: 0xdddddd, side: THREE.BackSide }), // 天井       白
-            new THREE.MeshBasicMaterial({ color: 0x333333, side: THREE.BackSide }), // 床         暗灰
-            new THREE.MeshBasicMaterial({ color: 0xdd2222, side: THREE.BackSide }), // 奥 (South) 赤
-            new THREE.MeshBasicMaterial({ color: 0x2244cc, side: THREE.BackSide }), // 前 (North) 青
-        ];
-        this.scene.add(new THREE.Mesh(geo, mats));
-    }
-
-    /** インタラクティブオブジェクト（追加時はここへ） */
-    _initObjects() {
-        // CONFIG.OBJECT_DISTANCE を変更するだけで配置距離を調整できる
-        const geo = new THREE.BoxGeometry(1.5, 1.5, 1.5);
-        const mat = new THREE.MeshStandardMaterial({
-            color: 0x00e5ff, roughness: 0.25, metalness: 0.1
-        });
-        this.cube = new THREE.Mesh(geo, mat);
-        this.cube.position.set(0, 0, -CONFIG.OBJECT_DISTANCE);
-        this.scene.add(this.cube);
-        this.interactiveObjects.push(this.cube);
-    }
-
-    // -------------------------------------------------------
-    // [RETICLE] 3D レティクル（Gaze インジケータ）
-    //   camera.add() することで常に視野中央に追従。
-    //   StereoCamera レンダリング時も両目それぞれに正しく描画される
-    //   （主カメラの子オブジェクトとしてシーングラフに組込済みのため）。
-    // -------------------------------------------------------
-    _initReticle() {
-        // 外側リング（常時表示）
-        this.reticle3D = new THREE.Mesh(
-            new THREE.RingGeometry(CONFIG.RETICLE_INNER_R, CONFIG.RETICLE_OUTER_R, 48),
-            new THREE.MeshBasicMaterial({
-                color: 0xffffff, side: THREE.DoubleSide,
-                transparent: true, opacity: 0.85
-            })
-        );
-        this.reticle3D.position.set(0, 0, -CONFIG.RETICLE_DISTANCE);
-        this.camera.add(this.reticle3D);
-
-        // 中心ドット
-        this.reticleDot = new THREE.Mesh(
-            new THREE.CircleGeometry(CONFIG.RETICLE_INNER_R * 0.5, 16),
-            new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55 })
-        );
-        this.reticleDot.position.set(0, 0, -CONFIG.RETICLE_DISTANCE + 0.001);
-        this.camera.add(this.reticleDot);
-    }
-
-    // -------------------------------------------------------
-    // [POPUP] 3D ポップアップ（Canvas テクスチャ）
-    //   camera.add() することで常に視野内に表示。
-    //   Canvas に文字を描画 → CanvasTexture として PlaneGeometry へ貼付。
-    //   StereoCamera でも両目に同じテクスチャが描画される。
-    // -------------------------------------------------------
-    _initPopup() {
-        this.popupCanvas = document.createElement('canvas');
-        this.popupCanvas.width  = 512;
-        this.popupCanvas.height = 128;
-        this.popupTexture = new THREE.CanvasTexture(this.popupCanvas);
-
-        this.popupMesh = new THREE.Mesh(
-            new THREE.PlaneGeometry(CONFIG.POPUP_WIDTH, CONFIG.POPUP_HEIGHT),
-            new THREE.MeshBasicMaterial({
-                map: this.popupTexture, transparent: true, side: THREE.DoubleSide
-            })
-        );
-        this.popupMesh.position.set(0, CONFIG.POPUP_Y_OFFSET, -CONFIG.POPUP_DISTANCE);
-        this.popupMesh.visible = false;
-        this.camera.add(this.popupMesh);
-    }
-
-    // ============================================================
-    //  [GYRO] ジャイロセンサー / デバイス姿勢の初期化
-    // ============================================================
-
-    _initGyro() {
-        // -------------------------------------------------------
-        // Chrome Android は 'deviceorientationabsolute' を優先して発火する。
-        // absolute は地磁気基準の絶対角度を返すため、より安定。
-        // 'deviceorientation' は機種・OS によって absolute / relative の
-        // どちらかわからないため、absolute を先に登録して優先する。
+        // Chrome Android: 'deviceorientationabsolute' を優先して発火する。
+        // absolute は地磁気基準の絶対角度 → より安定した値を返す。
+        // 'deviceorientation' は機種・OS によって absolute / relative が
+        // 混在するため、absolute を先に登録して優先する。
         // -------------------------------------------------------
         window.addEventListener('deviceorientationabsolute', (e) => {
-            this._handleOrientation(e, 'absolute');
+            this._handle(e, 'absolute');
         }, true);
 
         window.addEventListener('deviceorientation', (e) => {
-            if (this._dbg.lastEventType !== 'absolute') {
-                this._handleOrientation(e, 'relative');
-            }
+            if (this._evType !== 'absolute') this._handle(e, 'relative');
         }, true);
 
-        // 画面回転の検知
-        this.screenOrientation = this._getScreenOrientation();
-        window.addEventListener('orientationchange', () => {
-            this.screenOrientation = this._getScreenOrientation();
-        });
-        screen.orientation?.addEventListener('change', () => {
-            this.screenOrientation = this._getScreenOrientation();
-        });
+        // 画面回転検知
+        this._screenOri = this._readScreenOri();
+        window.addEventListener('orientationchange', () => { this._screenOri = this._readScreenOri(); });
+        screen.orientation?.addEventListener('change', () => { this._screenOri = this._readScreenOri(); });
     }
 
-    _handleOrientation(event, evType) {
-        this._dbg.eventCount++;
-        this._dbg.lastEventType = evType;
-
+    _handle(e, type) {
+        this._evCount++;
+        this._evType = type;
         // alpha = 0（真北）のとき truthy check では false になるバグを回避
         // null / undefined だけを除外し、0 は有効な値として処理する
-        if (event.alpha !== null && event.alpha !== undefined) {
+        if (e.alpha !== null && e.alpha !== undefined) {
             this.hasGyro = true;
-            this.deviceOrientation = {
-                alpha : event.alpha,
-                beta  : event.beta,
-                gamma : event.gamma,
-            };
+            this._data = { alpha: e.alpha, beta: e.beta, gamma: e.gamma };
         }
     }
 
     /** window.orientation は非推奨 → screen.orientation.angle を優先 */
-    _getScreenOrientation() {
+    _readScreenOri() {
         if (screen.orientation?.angle !== undefined) return screen.orientation.angle;
         return window.orientation || 0;
     }
 
-    // ============================================================
-    //  [CAMERA] カメラ姿勢の更新
-    // ============================================================
+    /** 基準姿勢をリセット（次フレームで自動キャリブレーション） */
+    calibrate() { this._initialQInv = null; }
+
+    /** ジャイロが利用可能かどうか */
+    get isActive() { return CONFIG.ENABLE_GYRO && this.hasGyro; }
 
     // -------------------------------------------------------
     // デバイス姿勢 → Three.js クォータニオン変換
     //   Three.js 公式 DeviceOrientationControls と同一の実装。
     //
-    //   乗算順序:  q_euler  ×  qAlign  ×  qScreen
+    //   乗算順序: q_euler × qAlign × qScreen
+    //     q_euler  : デバイス絶対姿勢（world space）
+    //                Euler('YXZ') で Z-X'-Y'' → YXZ 順に変換
+    //     qAlign   : 座標系補正（X 軸 -90°）
+    //                デバイス座標「上面 = +Y」→ Three.js カメラ「前方 = -Z」
+    //                Quaternion(-√½, 0, 0, √½) ≡ setFromAxisAngle(X, -PI/2)
+    //     qScreen  : 画面向き補正（Portrait = 0°, Landscape = 90°/-90°）
     //
-    //   q_euler  : デバイス絶対姿勢（world space での回転）
-    //              Euler('YXZ') でデバイスの Z-X'-Y'' 回転を変換
-    //
-    //   qAlign   : 座標系補正（X 軸 -90°）
-    //              デバイス座標「上面 = +Y」→ Three.js カメラ「前方 = -Z」
-    //              Quaternion(-√½, 0, 0, √½) ≡ setFromAxisAngle(X, -PI/2)
-    //
-    //   qScreen  : 画面向き補正（Portrait = 0°, Landscape = 90°/-90°）
-    //
-    //   旧実装のバグ: qAlign × q_euler × qScreen の順だったため、
-    //   qAlign が q_euler より先に適用されて Yaw（左右）が歪んでいた。
+    //   過去のバグ: qAlign × q_euler × qScreen の順だったため
+    //     座標系補正が先に適用されて Yaw（左右）が歪んでいた。
     // -------------------------------------------------------
-    _computeDeviceQ(alpha, beta, gamma, orient) {
+    getQuaternion() {
+        if (!this.isActive || this._data.alpha === undefined) return null;
+
+        const toRad = THREE.MathUtils.degToRad;
+        const a = this._data.alpha != null ? toRad(this._data.alpha) : 0;
+        const b = this._data.beta  != null ? toRad(this._data.beta)  : 0;
+        const g = this._data.gamma != null ? toRad(this._data.gamma) : 0;
+        const o = this._screenOri  != null ? toRad(this._screenOri)  : 0;
+
         const euler = new THREE.Euler();
-        euler.set(beta, alpha, -gamma, 'YXZ');
+        euler.set(b, a, -g, 'YXZ');
 
         const q = new THREE.Quaternion();
-        q.setFromEuler(euler);                                              // ① 絶対姿勢
+        q.setFromEuler(euler);                                                // ① 絶対姿勢
+        q.multiply(new THREE.Quaternion(-Math.SQRT1_2, 0, 0, Math.SQRT1_2)); // ② 座標系補正
+        const qs = new THREE.Quaternion();
+        qs.setFromAxisAngle(new THREE.Vector3(0, 0, 1), -o);
+        q.multiply(qs);                                                        // ③ 画面向き補正
 
-        const qAlign = new THREE.Quaternion(-Math.SQRT1_2, 0, 0, Math.SQRT1_2);
-        q.multiply(qAlign);                                                 // ② 座標系補正
+        // -------------------------------------------------------
+        // 初期姿勢補正（相対ヘディング）
+        //   calibrate() 後の最初のフレームで基準を記録する。
+        //   camera.quaternion = q_initial⁻¹ × q_current
+        //     → q_current == q_initial のとき identity（正面）
+        // -------------------------------------------------------
+        if (!this._initialQInv) {
+            this._initialQInv = q.clone().invert();
+        }
+        return new THREE.Quaternion().copy(this._initialQInv).multiply(q);
+    }
+}
 
-        const qScreen = new THREE.Quaternion();
-        qScreen.setFromAxisAngle(new THREE.Vector3(0, 0, 1), -orient);
-        q.multiply(qScreen);                                                // ③ 画面向き補正
-
-        return q;
+// ================================================================
+// ■ TouchController — スワイプ / タップ / Cardboard ボタン
+// ================================================================
+class TouchController {
+    constructor() {
+        this._x           = 0;    // 累積水平回転量
+        this._y           = 0;    // 累積垂直回転量
+        this._swipeEnabled = true;
+        this._onTap        = null;
     }
 
-    updateCameraRotation() {
-        if (this.hasGyro && this.deviceOrientation.alpha !== undefined) {
-            const toRad  = THREE.MathUtils.degToRad;
-            const alpha  = this.deviceOrientation.alpha != null ? toRad(this.deviceOrientation.alpha) : 0;
-            const beta   = this.deviceOrientation.beta  != null ? toRad(this.deviceOrientation.beta)  : 0;
-            const gamma  = this.deviceOrientation.gamma != null ? toRad(this.deviceOrientation.gamma) : 0;
-            const orient = this.screenOrientation       != null ? toRad(this.screenOrientation)       : 0;
+    /**
+     * @param {Function} onTap - タップ時コールバック
+     *   type: 'tap'（短押し）| 'long'（長押し）| 'click'（PC）
+     */
+    init(onTap) {
+        this._onTap = onTap;
+        if (!CONFIG.ENABLE_TOUCH) return;
 
-            const deviceQ = this._computeDeviceQ(alpha, beta, gamma, orient);
+        // --- Touch ---
+        let prevX = 0, prevY = 0, startX = 0, startY = 0;
+        let moved = false, tStart = 0;
 
-            // -------------------------------------------------------
-            // 初期姿勢補正（相対ヘディング）
-            //   Start 時点の姿勢を「正面」として扱うため、
-            //   初回センサーフレームで q_initial の逆数を保存する。
-            //
-            //   camera.quaternion = q_initial⁻¹ × q_current
-            //     → q_current == q_initial のとき identity（正面）
-            //     → 差分だけカメラに反映される
-            // -------------------------------------------------------
-            if (!this._initialQInv) {
-                this._initialQInv = deviceQ.clone().invert();
+        window.addEventListener('touchstart', (e) => {
+            if (e.touches.length !== 1) return;
+            prevX = startX = e.touches[0].clientX;
+            prevY = startY = e.touches[0].clientY;
+            moved = false; tStart = Date.now();
+        }, { passive: true });
+
+        window.addEventListener('touchmove', (e) => {
+            if (e.touches.length !== 1) return;
+            const dx = e.touches[0].clientX - startX;
+            const dy = e.touches[0].clientY - startY;
+            if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true;
+            if (this._swipeEnabled && moved) {
+                this._x += (e.touches[0].clientX - prevX) * 0.2;
+                this._y  = Math.max(-85, Math.min(85, this._y + (e.touches[0].clientY - prevY) * 0.2));
             }
+            prevX = e.touches[0].clientX;
+            prevY = e.touches[0].clientY;
+        }, { passive: true });
 
-            this.camera.quaternion
-                .copy(this._initialQInv)
-                .multiply(deviceQ);
+        window.addEventListener('touchend', () => {
+            const dur = Date.now() - tStart;
+            if (!moved) {
+                if      (dur < 400)  this._onTap?.('tap');
+                else if (dur < 1500) this._onTap?.('long');
+            }
+        }, { passive: true });
 
-        } else {
-            // ジャイロなし → マウス / タッチスワイプ（PC・開発用）
-            const phi   = THREE.MathUtils.degToRad(90 - this.mouse.y);
-            const theta = THREE.MathUtils.degToRad(this.mouse.x + 180);
-            this.camera.lookAt(new THREE.Vector3(
-                Math.sin(phi) * Math.sin(theta),
-                Math.cos(phi),
-                Math.sin(phi) * Math.cos(theta)
-            ));
+        // --- Mouse（PC / 開発用）---
+        let mDown = false, mMoved = false, mPrevX = 0, mPrevY = 0;
+        window.addEventListener('mousedown', (e) => {
+            mDown = true; mMoved = false;
+            mPrevX = e.clientX; mPrevY = e.clientY;
+        });
+        window.addEventListener('mousemove', (e) => {
+            if (!mDown) return;
+            if (Math.abs(e.clientX - mPrevX) > 3 || Math.abs(e.clientY - mPrevY) > 3) mMoved = true;
+            if (this._swipeEnabled) {
+                this._x += (e.clientX - mPrevX) * 0.2;
+                this._y  = Math.max(-85, Math.min(85, this._y + (e.clientY - mPrevY) * 0.2));
+            }
+            mPrevX = e.clientX; mPrevY = e.clientY;
+        });
+        window.addEventListener('mouseup',  () => { mDown = false; });
+        window.addEventListener('click',    () => { if (!mMoved) this._onTap?.('click'); mMoved = false; });
+    }
+
+    enableSwipe()  { this._swipeEnabled = true;  }
+    disableSwipe() { this._swipeEnabled = false; }
+
+    /** スワイプ量から lookAt ターゲットを計算 */
+    getLookTarget() {
+        const phi   = THREE.MathUtils.degToRad(90 - this._y);
+        const theta = THREE.MathUtils.degToRad(this._x + 180);
+        return new THREE.Vector3(
+            Math.sin(phi) * Math.sin(theta),
+            Math.cos(phi),
+            Math.sin(phi) * Math.cos(theta)
+        );
+    }
+}
+
+// ================================================================
+// ■ GazeController — レジストリ型 Gaze 判定
+//   gaze.register(mesh, callbacks) でどのオブジェクトにも対応可能。
+//   将来のゲームオブジェクト追加は register() 一行で完了する。
+// ================================================================
+class GazeController {
+    constructor(camera) {
+        this._camera    = camera;
+        this._raycaster = new THREE.Raycaster();
+        this._center    = new THREE.Vector2(0, 0);
+        this._registry  = new Map();  // mesh → callbacks
+        this._current   = null;
+        this._startTime = 0;
+        this._triggered = false;
+    }
+
+    /**
+     * Gaze 対象オブジェクトを登録
+     * @param {THREE.Mesh} mesh
+     * @param {Object} cb
+     *   cb.onEnter()            - 視線が入った
+     *   cb.onProgress(pct)      - 進行状況 0.0〜1.0
+     *   cb.onTrigger()          - トリガー発火
+     *   cb.onExit()             - 視線が外れた
+     *   cb.dwellTime (ms)       - 省略時は CONFIG.GAZE_DWELL_TIME
+     */
+    register(mesh, cb) {
+        this._registry.set(mesh, {
+            dwellTime  : cb.dwellTime  ?? CONFIG.GAZE_DWELL_TIME,
+            onEnter    : cb.onEnter    ?? (() => {}),
+            onProgress : cb.onProgress ?? (() => {}),
+            onTrigger  : cb.onTrigger  ?? (() => {}),
+            onExit     : cb.onExit     ?? (() => {}),
+        });
+    }
+
+    unregister(mesh) {
+        if (this._current === mesh) this._exit();
+        this._registry.delete(mesh);
+    }
+
+    /** Cardboard ボタン押下時に即時トリガー */
+    triggerCurrent() {
+        if (this._current && !this._triggered) {
+            this._triggered = true;
+            this._registry.get(this._current)?.onTrigger();
         }
     }
 
-    // ============================================================
-    //  [GAZE] 視線インタラクション
-    // ============================================================
+    /** 現在の Gaze ターゲット（デバッグ / 外部参照用） */
+    get currentTarget() { return this._current; }
 
-    updateGaze() {
-        // 主カメラ中心からレイを飛ばしてインタラクティブオブジェクトと交差判定
-        this.raycaster.setFromCamera(this.centerVec, this.camera);
-        const hits = this.raycaster.intersectObjects(this.interactiveObjects);
+    update() {
+        this._raycaster.setFromCamera(this._center, this._camera);
+        const hits = this._raycaster.intersectObjects([...this._registry.keys()]);
 
         if (hits.length > 0) {
-            const obj = hits[0].object;
+            const hit = hits[0].object;
+            const cb  = this._registry.get(hit);
 
-            if (STATE.gazeTarget !== obj) {
-                STATE.gazeTarget      = obj;
-                STATE.gazeStartTime   = Date.now();
-                STATE.isGazeTriggered = false;
+            if (this._current !== hit) {    // 新しいターゲットへ入った
+                this._exit();
+                this._current   = hit;
+                this._startTime = Date.now();
+                this._triggered = false;
+                cb?.onEnter();
             }
 
-            const elapsed = Date.now() - STATE.gazeStartTime;
-            const pct     = Math.min(elapsed / CONFIG.GAZE_DWELL_TIME, 1);
-            this._updateReticleGaze(pct);
+            const elapsed = Date.now() - this._startTime;
+            const pct     = Math.min(elapsed / cb.dwellTime, 1);
+            cb?.onProgress(pct);
 
-            if (elapsed >= CONFIG.GAZE_DWELL_TIME && !STATE.isGazeTriggered) {
-                this._onGazeTrigger(obj);
+            if (elapsed >= cb.dwellTime && !this._triggered) {
+                this._triggered = true;
+                cb?.onTrigger();
             }
-
         } else {
-            if (STATE.gazeTarget !== null) {
-                STATE.gazeTarget      = null;
-                STATE.isGazeTriggered = false;
-                this._updateReticleGaze(0);
-                this.hidePopup();
-            }
+            this._exit();
         }
     }
 
-    _onGazeTrigger(obj) {
-        STATE.isGazeTriggered = true;
-        obj.material.color.setHex(Math.random() * 0xffffff);
-        this.showPopup('Hello VR!');
+    _exit() {
+        if (!this._current) return;
+        this._registry.get(this._current)?.onExit();
+        this._current   = null;
+        this._triggered = false;
+    }
+}
+
+// ================================================================
+// ■ Reticle3D — 3D レティクル（視線インジケータ）
+//   camera.add() で常に視野中央に追従。Stereo でも両目に描画。
+// ================================================================
+class Reticle3D {
+    constructor(camera) {
+        // 外側リング（常時表示）
+        this._ring = new THREE.Mesh(
+            new THREE.RingGeometry(CONFIG.RETICLE_INNER_R, CONFIG.RETICLE_OUTER_R, 48),
+            new THREE.MeshBasicMaterial({
+                color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0.85
+            })
+        );
+        this._ring.position.set(0, 0, -CONFIG.RETICLE_DISTANCE);
+        camera.add(this._ring);
+
+        // 中心ドット
+        this._dot = new THREE.Mesh(
+            new THREE.CircleGeometry(CONFIG.RETICLE_INNER_R * 0.5, 16),
+            new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55 })
+        );
+        this._dot.position.set(0, 0, -CONFIG.RETICLE_DISTANCE + 0.001);
+        camera.add(this._dot);
     }
 
-    // -------------------------------------------------------
-    // レティクルの視覚フィードバック（Gaze 進行状況）
-    //   pct: 0.0（待機）〜 1.0（トリガー直前）
-    //   色変化: 白 → 黄 → オレンジ で残り時間を直感的に表現
-    // -------------------------------------------------------
-    _updateReticleGaze(pct) {
-        if (!this.reticle3D) return;
+    /** Gaze 進行状況に合わせてアニメーション（pct: 0.0〜1.0） */
+    updateProgress(pct) {
         if (pct > 0) {
-            this.reticle3D.material.color.setHSL(0.13 * (1 - pct), 1.0, 0.65);
-            this.reticle3D.scale.setScalar(1 + pct * 0.65);
+            // 白 → 黄 → オレンジ の色変化でゲージを表現
+            this._ring.material.color.setHSL(0.13 * (1 - pct), 1.0, 0.65);
+            this._ring.scale.setScalar(1 + pct * 0.65);
         } else {
-            this.reticle3D.material.color.set(0xffffff);
-            this.reticle3D.scale.setScalar(1);
+            this._ring.material.color.set(0xffffff);
+            this._ring.scale.setScalar(1);
         }
     }
 
-    // ============================================================
-    //  [POPUP] 3D ポップアップ表示
-    // ============================================================
+    reset() { this.updateProgress(0); }
+}
 
-    showPopup(text) {
-        const ctx = this.popupCanvas.getContext('2d');
-        const w   = this.popupCanvas.width;
-        const h   = this.popupCanvas.height;
+// ================================================================
+// ■ Popup3D — 3D ポップアップ（Canvas テクスチャ）
+//   camera.add() で常に視野内に表示。通常 / VR 両モード対応。
+// ================================================================
+class Popup3D {
+    constructor(camera) {
+        this._canvas  = document.createElement('canvas');
+        this._canvas.width = 512; this._canvas.height = 128;
+        this._texture = new THREE.CanvasTexture(this._canvas);
 
+        this._mesh = new THREE.Mesh(
+            new THREE.PlaneGeometry(CONFIG.POPUP_WIDTH, CONFIG.POPUP_HEIGHT),
+            new THREE.MeshBasicMaterial({
+                map: this._texture, transparent: true, side: THREE.DoubleSide
+            })
+        );
+        this._mesh.position.set(0, CONFIG.POPUP_Y_OFFSET, -CONFIG.POPUP_DISTANCE);
+        this._mesh.visible = false;
+        camera.add(this._mesh);
+    }
+
+    show(text) {
+        const ctx = this._canvas.getContext('2d');
+        const w   = this._canvas.width, h = this._canvas.height;
         ctx.clearRect(0, 0, w, h);
-
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.82)';
+        ctx.fillStyle = 'rgba(0,0,0,0.82)';
         this._roundRect(ctx, 6, 6, w - 12, h - 12, 18);
         ctx.fill();
-
-        ctx.fillStyle    = '#ffffff';
-        ctx.font         = 'bold 50px Arial';
-        ctx.textAlign    = 'center';
-        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 50px Arial';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText(text, w / 2, h / 2);
-
-        this.popupTexture.needsUpdate = true;
-        this.popupMesh.visible = true;
+        this._texture.needsUpdate = true;
+        this._mesh.visible = true;
     }
 
-    hidePopup() {
-        if (this.popupMesh) this.popupMesh.visible = false;
-    }
+    hide() { if (this._mesh) this._mesh.visible = false; }
 
-    /** Canvas 角丸矩形ヘルパー */
     _roundRect(ctx, x, y, w, h, r) {
         ctx.beginPath();
         ctx.moveTo(x + r, y);
@@ -644,223 +587,486 @@ class VRApp {
         ctx.arcTo(x,     y,     x + w, y,     r);
         ctx.closePath();
     }
+}
 
-    // ============================================================
-    //  [CARDBOARD BUTTON] 物理ボタン / タップ対応
-    // ============================================================
+// ================================================================
+// ■ SceneRenderer — 単眼 / ステレオ描画
+//   通常モード・VRモード両方で使用するため VRRenderer ではなく
+//   SceneRenderer と命名する。
+//   モードに応じて renderMono() / renderStereo() を VRApp が選択する。
+// ================================================================
+class SceneRenderer {
+    constructor(scene, camera) {
+        this._scene  = scene;
+        this._camera = camera;
 
-    // -------------------------------------------------------
-    // Cardboard ボタン押下時の処理
-    //   Cardboard v2: 導電ボタン → 画面タップ相当
-    //   将来のゲーム操作はここへ追加する。
-    //   例: ジャンプ、選択確定、シーン遷移
-    //
-    //   外部から登録する場合:
-    //     STATE.cardboardBtnCB = (type) => { console.log(type); }
-    //     type: 'tap'（短押し）| 'long'（長押し）
-    // -------------------------------------------------------
-    _onCardboardButton(type) {
-        if (CONFIG.DEBUG) console.log('[Cardboard] Button:', type);
+        // -------------------------------------------------------
+        // THREE.StereoCamera — 本当の立体視
+        //   主カメラの position / quaternion / FOV から、
+        //   左右の目に対応した cameraL / cameraR を
+        //   STEREO_EYE_SEP 分オフセットして自動生成する。
+        //   旧実装（同一映像を左右複製）と異なり、正しく視差が生まれる。
+        // -------------------------------------------------------
+        this._stereo = new THREE.StereoCamera();
+        this._stereo.eyeSep = CONFIG.STEREO_EYE_SEP;
 
-        if (STATE.cardboardBtnCB) STATE.cardboardBtnCB(type);
-
-        // デフォルト動作: Gaze ターゲットがあれば即トリガー
-        if (STATE.gazeTarget && !STATE.isGazeTriggered) {
-            this._onGazeTrigger(STATE.gazeTarget);
-        }
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.autoClear = false; // ステレオ描画で手動クリア
+        document.getElementById('vr-container').appendChild(this.renderer.domElement);
+        this.resize();
     }
 
-    // ============================================================
-    //  [INPUT] タッチ / マウス / Cardboard ボタンの統合ハンドラ
-    // ============================================================
-
-    _initInputHandlers() {
-        let touchStartTime = 0;
-        let touchMoved     = false;
-
-        // --- タッチ開始 ---
-        window.addEventListener('touchstart', (e) => {
-            touchStartTime = Date.now();
-            touchMoved     = false;
-            if (e.touches.length === 1 && !this.hasGyro) {
-                this.mouse.isDown = true;
-                this.mouse.prevX  = e.touches[0].clientX;
-                this.mouse.prevY  = e.touches[0].clientY;
-            }
-        }, { passive: true });
-
-        // --- タッチ移動（ジャイロなし時のスワイプ） ---
-        window.addEventListener('touchmove', (e) => {
-            touchMoved = true;
-            if (!this.mouse.isDown || e.touches.length !== 1 || this.hasGyro) return;
-            const dx = e.touches[0].clientX - this.mouse.prevX;
-            const dy = e.touches[0].clientY - this.mouse.prevY;
-            this.mouse.x += dx * 0.2;
-            this.mouse.y  = Math.max(-85, Math.min(85, this.mouse.y + dy * 0.2));
-            this.mouse.prevX = e.touches[0].clientX;
-            this.mouse.prevY = e.touches[0].clientY;
-        }, { passive: true });
-
-        // --- タッチ終了 / Cardboard ボタン判定 ---
-        window.addEventListener('touchend', (e) => {
-            this.mouse.isDown    = false;
-            const duration = Date.now() - touchStartTime;
-            if (!touchMoved) {
-                if (duration < 400)        this._onCardboardButton('tap');
-                else if (duration < 1500)  this._onCardboardButton('long');
-            }
-        }, { passive: true });
-
-        // --- マウス（PC / 開発環境） ---
-        let lastWasTouch = false;
-        window.addEventListener('touchstart', () => { lastWasTouch = true; }, { passive: true });
-        window.addEventListener('mousedown', (e) => {
-            this.mouse.isDown = true;
-            this.mouse.prevX  = e.clientX;
-            this.mouse.prevY  = e.clientY;
-        });
-        window.addEventListener('mousemove', (e) => {
-            if (!this.mouse.isDown) return;
-            this.mouse.x += (e.clientX - this.mouse.prevX) * 0.2;
-            this.mouse.y  = Math.max(-85, Math.min(85,
-                this.mouse.y + (e.clientY - this.mouse.prevY) * 0.2));
-            this.mouse.prevX = e.clientX;
-            this.mouse.prevY = e.clientY;
-        });
-        window.addEventListener('mouseup',  () => { this.mouse.isDown = false; });
-        window.addEventListener('click', () => {
-            // タッチ由来のクリックは touchend で処理済みなので除外
-            if (lastWasTouch) { lastWasTouch = false; return; }
-            this._onCardboardButton('click');
-        });
-    }
-
-    // ============================================================
-    //  [FULLSCREEN] Fullscreen API
-    // ============================================================
-
-    async requestFullscreen() {
-        const el = document.documentElement;
-        try {
-            if      (el.requestFullscreen)       await el.requestFullscreen();
-            else if (el.webkitRequestFullscreen) await el.webkitRequestFullscreen();
-            else if (el.mozRequestFullScreen)    await el.mozRequestFullScreen();
-            else                                  this._showFsNotice();
-        } catch (e) {
-            if (CONFIG.DEBUG) console.warn('[VR] Fullscreen failed:', e);
-            this._showFsNotice();
-        }
-    }
-
-    _showFsNotice() {
-        const el = document.getElementById('fs-notice');
-        if (!el) return;
-        el.style.display = 'block';
-        setTimeout(() => { el.style.display = 'none'; }, 5000);
-    }
-
-    // ============================================================
-    //  [ORIENTATION] 縦横判定・縦画面プロンプト
-    // ============================================================
-
-    _checkOrientation() {
-        const isLandscape = window.innerWidth > window.innerHeight;
-        const prompt = document.getElementById('rotate-prompt');
-        if (prompt) prompt.style.display = isLandscape ? 'none' : 'flex';
-    }
-
-    // ============================================================
-    //  [RESIZE] リサイズハンドラ
-    // ============================================================
-
-    _initResize() {
-        const onResize = () => {
-            const w = window.innerWidth, h = window.innerHeight;
-            this.camera.aspect = w / h;
-            this.camera.updateProjectionMatrix();
-            this.renderer.setSize(w, h);
-            this._checkOrientation();
-        };
-        window.addEventListener('resize', onResize);
-        this._checkOrientation();
-    }
-
-    // ============================================================
-    //  [RENDER] 描画
-    // ============================================================
-
-    // -------------------------------------------------------
-    // ステレオレンダリング（Cardboard VR モード）
-    //
-    //   THREE.StereoCamera の使い方:
-    //   1. stereoCamera.update(mainCamera) で cameraL / cameraR を更新
-    //      → 主カメラの quaternion・position・FOV をコピーし
-    //         左右に eyeSep/2 ずつオフセットした位置を設定する
-    //   2. Viewport / Scissor を左右半分に設定して 2 回 render()
-    //   3. renderer.autoClear = false のため手動で clear()
-    //
-    //   旧実装との差異:
-    //     旧: 同一映像を左右に複製（視差なし）
-    //     新: 左右でわずかに異なる視点（視差あり → 本当の立体視）
-    // -------------------------------------------------------
-    _renderStereo() {
+    /** ウィンドウサイズ変更時に必ず呼ぶ */
+    resize() {
         const w = window.innerWidth, h = window.innerHeight;
+        this._camera.aspect = w / h;
+        this._camera.updateProjectionMatrix();
+        this.renderer.setSize(w, h);
+    }
 
-        this.stereoCamera.update(this.camera);
+    /** 通常モード：単眼描画（パフォーマンス優先） */
+    renderMono() {
+        this.renderer.clear();
+        this.renderer.render(this._scene, this._camera);
+    }
 
+    // -------------------------------------------------------
+    // VRモード：ステレオ描画
+    //   1. stereo.update(mainCamera) で cameraL / cameraR を更新
+    //   2. Viewport / Scissor を左右半分に設定して 2 回 render()
+    // -------------------------------------------------------
+    renderStereo() {
+        const w = window.innerWidth, h = window.innerHeight;
+        this._stereo.update(this._camera);
         this.renderer.clear();
         this.renderer.setScissorTest(true);
 
         // 左目
         this.renderer.setViewport(0, 0, w / 2, h);
         this.renderer.setScissor(0, 0, w / 2, h);
-        this.renderer.render(this.scene, this.stereoCamera.cameraL);
+        this.renderer.render(this._scene, this._stereo.cameraL);
 
         // 右目
         this.renderer.setViewport(w / 2, 0, w / 2, h);
         this.renderer.setScissor(w / 2, 0, w / 2, h);
-        this.renderer.render(this.scene, this.stereoCamera.cameraR);
+        this.renderer.render(this._scene, this._stereo.cameraR);
 
         this.renderer.setScissorTest(false);
     }
+}
 
-    /** 単眼レンダリング（PC / 開発用） */
-    _renderMono() {
-        this.renderer.clear();
-        this.renderer.render(this.scene, this.camera);
+// ================================================================
+// ■ UIManager — DOM UI 管理（ゲームロジックとは完全分離）
+// ================================================================
+class UIManager {
+    constructor() {
+        this._exitTimer  = null;
+        this._toastTimer = null;
+    }
+
+    /** 通常モード UI に切替 */
+    showNormalUI() {
+        this._show('hud-normal',    'flex');
+        this._show('hud-vr',        'none');
+        this._show('vr-divider',    'none');
+        this._show('rotate-prompt', 'none');
+    }
+
+    /** VRモード UI に切替 */
+    showVRUI() {
+        this._show('hud-normal', 'none');
+        this._show('hud-vr',     'flex');
+        this._show('vr-divider', 'block');
+        this._fadeExitBtn();
+    }
+
+    /** VR終了ボタンを一時表示（タップ時など） */
+    showExitBtn() { this._fadeExitBtn(); }
+
+    /** 縦画面プロンプトの表示切替 */
+    checkOrientation(isVR) {
+        const landscape = window.innerWidth > window.innerHeight;
+        this._show('rotate-prompt', (isVR && !landscape) ? 'flex' : 'none');
+    }
+
+    /** 情報 / エラー Toast 表示 */
+    showToast(msg, duration = CONFIG.TOAST_DURATION) {
+        const el = document.getElementById('toast');
+        if (!el) return;
+        el.textContent = msg; el.style.opacity = '1';
+        clearTimeout(this._toastTimer);
+        this._toastTimer = setTimeout(() => { el.style.opacity = '0'; }, duration);
+    }
+
+    showError(msg) { this.showToast('⚠️ ' + msg); }
+
+    _show(id, display) {
+        const el = document.getElementById(id);
+        if (el) el.style.display = display;
+    }
+
+    _fadeExitBtn() {
+        const btn = document.getElementById('btn-vr-exit');
+        if (!btn) return;
+        btn.style.opacity = '1';
+        clearTimeout(this._exitTimer);
+        this._exitTimer = setTimeout(() => { btn.style.opacity = '0'; }, CONFIG.VR_EXIT_HIDE_DELAY);
+    }
+}
+
+// ================================================================
+// ■ DebugPanel — デバッグ情報表示（CONFIG.DEBUG = true のみ動作）
+// ================================================================
+class DebugPanel {
+    update({ mode, gyro, gaze, camera, frameCount }) {
+        if (!CONFIG.DEBUG) return;
+        this._set('dbg-mode',      mode.toUpperCase(), mode === 'vr' ? 'dbg-ok' : 'dbg-warn');
+        this._set('dbg-https',     IS_SECURE ? 'OK ✅' : 'NG ❌', IS_SECURE ? 'dbg-ok' : 'dbg-err');
+        this._set('dbg-events',    gyro._evCount);
+        this._set('dbg-evtype',    gyro._evType);
+        this._set('dbg-hasGyro',   gyro.hasGyro, gyro.hasGyro ? 'dbg-ok' : 'dbg-warn');
+        const d = gyro._data;
+        this._set('dbg-alpha',     d.alpha != null ? d.alpha.toFixed(1) : '-');
+        this._set('dbg-beta',      d.beta  != null ? d.beta.toFixed(1)  : '-');
+        this._set('dbg-gamma',     d.gamma != null ? d.gamma.toFixed(1) : '-');
+        this._set('dbg-screenOri', gyro._screenOri);
+        this._set('dbg-offset',    gyro._initialQInv ? 'SET ✅' : 'pending',
+                                   gyro._initialQInv ? 'dbg-ok' : 'dbg-warn');
+        const q = camera.quaternion;
+        this._set('dbg-quat',  `${q.x.toFixed(2)},${q.y.toFixed(2)},${q.z.toFixed(2)},${q.w.toFixed(2)}`);
+        this._set('dbg-gaze',  gaze.currentTarget ? 'HIT ✅' : '-', gaze.currentTarget ? 'dbg-ok' : '');
+        this._set('dbg-frame', frameCount);
+    }
+
+    _set(id, text, cls) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = String(text);
+        if (cls !== undefined) el.className = cls;
+    }
+}
+
+// ================================================================
+// ■ ModeManager — 通常モード / VRモードの管理
+// ================================================================
+class ModeManager {
+    constructor() {
+        this._mode      = CONFIG.DEFAULT_MODE;
+        this._listeners = [];
+    }
+
+    getMode()  { return this._mode; }
+    isVR()     { return this._mode === 'vr'; }
+    isNormal() { return this._mode === 'normal'; }
+
+    /** モード変更リスナーを登録 */
+    onChange(fn) { this._listeners.push(fn); }
+
+    _set(mode) {
+        this._mode = mode;
+        this._listeners.forEach(fn => fn(mode));
+    }
+
+    setVR()     { this._set('vr'); }
+    setNormal() { this._set('normal'); }
+}
+
+// ================================================================
+// ■ VRApp — メインオーケストレータ
+//
+//   【コントローラー間の依存方針】
+//   各 Controller / Manager は互いを直接参照しない。
+//   連携はすべて VRApp 経由で行う。
+//
+//   GyroController    ─┐
+//   TouchController   ─┤               コールバック
+//   GazeController    ─┤  → VRApp  ──────────────→ 他の Controller
+//   SceneRenderer     ─┤  (仲介役)    (this.xxx.method())
+//   UIManager         ─┤
+//   ModeManager       ─┘
+//
+//   例: TouchController がタップを検知したとき、
+//       TouchController 自身は GazeController を知らない。
+//       onTap コールバックが VRApp に通知し、
+//       VRApp が gaze.triggerCurrent() を呼び出す。
+//
+//   ゲームロジックの拡張は _initGaze() のコールバック内に追記する。
+// ================================================================
+class VRApp {
+    constructor() {
+        // Three.js
+        this.scene    = null;
+        this.camera   = null;
+        this.cube     = null;
+
+        // Controllers / Managers
+        this.gyro     = new GyroController();
+        this.touch    = new TouchController();
+        this.mode     = new ModeManager();
+        this.ui       = new UIManager();
+        this.debug    = new DebugPanel();
+
+        // Three.js Components（init 後に有効）
+        this.renderer = null;
+        this.reticle  = null;
+        this.popup    = null;
+        this.gaze     = null;
+
+        this._frameCount = 0;
     }
 
     // ============================================================
-    //  [DEBUG] デバッグパネル更新（CONFIG.DEBUG = true のみ動作）
+    //  [PUBLIC] 起動エントリポイント
+    //   VRApp インスタンスを作って init() を呼ぶだけで起動する。
+    // ============================================================
+    init() {
+        this._initScene();
+        this._initLights();
+        this._initSkybox();
+        this._initObjects();
+        this._initReticle();
+        this._initPopup();
+        this._initGaze();
+        this._initGyro();
+        this._initTouch();
+        this._initModeHandlers();
+        this._initUI();
+        this._initResize();
+        this._initFullscreenExitDetect();
+
+        // 初期モードを適用して描画開始
+        this._applyMode(CONFIG.DEFAULT_MODE);
+        this._animate();
+    }
+
+    // ============================================================
+    //  [PUBLIC] モード切替 API（外部から呼び出し可能）
     // ============================================================
 
-    _updateDebug() {
-        if (!CONFIG.DEBUG) return;
+    /** 通常モード → VRモード */
+    async switchToVR() {
+        // iOS 13+: ジャイロ許可（ユーザージェスチャが必要）
+        if (typeof DeviceOrientationEvent !== 'undefined' &&
+            typeof DeviceOrientationEvent.requestPermission === 'function') {
+            try {
+                await DeviceOrientationEvent.requestPermission();
+            } catch (_) {
+                this.ui.showError('センサーへのアクセスが許可されませんでした');
+            }
+        }
 
-        const set = (id, text, cls) => {
-            const el = document.getElementById(id);
-            if (!el) return;
-            el.textContent = String(text);
-            if (cls !== undefined) el.className = cls;
+        // Fullscreen
+        if (CONFIG.ENABLE_FULLSCREEN) await this._requestFullscreen();
+
+        // 横画面ロック（未対応端末ではスキップ）
+        try { await screen.orientation?.lock('landscape'); } catch (_) {}
+
+        // VR 開始時の向きを正面にキャリブレーション
+        this.gyro.calibrate();
+
+        this.mode.setVR();
+    }
+
+    /** VRモード → 通常モード */
+    async switchToNormal() {
+        try {
+            if (document.fullscreenElement || document.webkitFullscreenElement) {
+                await (document.exitFullscreen?.() ?? document.webkitExitFullscreen?.());
+            }
+        } catch (_) {}
+        try { screen.orientation?.unlock(); } catch (_) {}
+        this.mode.setNormal();
+    }
+
+    // ============================================================
+    //  [SCENE] シーン初期化
+    // ============================================================
+
+    _initScene() {
+        this.scene  = new THREE.Scene();
+        this.camera = new THREE.PerspectiveCamera(
+            CONFIG.CAMERA_FOV,
+            window.innerWidth / window.innerHeight,
+            CONFIG.NEAR_CLIP, CONFIG.FAR_CLIP
+        );
+        this.camera.position.set(0, 0, 0);
+        this.scene.add(this.camera); // reticle / popup の子オブジェクトのため
+        this.renderer = new SceneRenderer(this.scene, this.camera);
+    }
+
+    _initLights() {
+        this.scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+        const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+        dir.position.set(5, 10, 7);
+        this.scene.add(dir);
+    }
+
+    _initSkybox() {
+        const geo = new THREE.BoxGeometry(CONFIG.SKYBOX_SIZE, CONFIG.SKYBOX_SIZE, CONFIG.SKYBOX_SIZE);
+        // 各面に異なる色 → 向き確認が容易になる
+        this.scene.add(new THREE.Mesh(geo, [
+            new THREE.MeshBasicMaterial({ color: 0xffdd00, side: THREE.BackSide }), // 右  黄
+            new THREE.MeshBasicMaterial({ color: 0x00cc44, side: THREE.BackSide }), // 左  緑
+            new THREE.MeshBasicMaterial({ color: 0xdddddd, side: THREE.BackSide }), // 天井 白
+            new THREE.MeshBasicMaterial({ color: 0x333333, side: THREE.BackSide }), // 床  暗灰
+            new THREE.MeshBasicMaterial({ color: 0xdd2222, side: THREE.BackSide }), // 奥  赤
+            new THREE.MeshBasicMaterial({ color: 0x2244cc, side: THREE.BackSide }), // 前  青
+        ]));
+    }
+
+    /** ゲームオブジェクト追加時はここへ追記 */
+    _initObjects() {
+        const geo = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+        const mat = new THREE.MeshStandardMaterial({ color: 0x00e5ff, roughness: 0.25, metalness: 0.1 });
+        this.cube = new THREE.Mesh(geo, mat);
+        this.cube.position.set(0, 0, -CONFIG.OBJECT_DISTANCE);
+        this.scene.add(this.cube);
+    }
+
+    _initReticle() { this.reticle = new Reticle3D(this.camera); }
+    _initPopup()   { this.popup   = new Popup3D(this.camera); }
+
+    // -------------------------------------------------------
+    // [GAZE] Gaze コールバック登録
+    //   新しいオブジェクトを追加する場合は gaze.register() を追記するだけ。
+    //   ゲームロジックはすべてコールバック内に閉じ込め、
+    //   GazeController 本体は変更しない。
+    //
+    //   例:
+    //     this.gaze.register(this.enemy, {
+    //         dwellTime : 1000,
+    //         onTrigger : () => enemy.destroy(),
+    //         onProgress: (pct) => this.reticle.updateProgress(pct),
+    //         onExit    : () => this.reticle.reset(),
+    //     });
+    // -------------------------------------------------------
+    _initGaze() {
+        this.gaze = new GazeController(this.camera);
+        this.gaze.register(this.cube, {
+            onEnter    : () => {},
+            onProgress : (pct) => this.reticle.updateProgress(pct),
+            onTrigger  : () => {
+                this.cube.material.color.setHex(Math.random() * 0xffffff);
+                this.popup.show('Hello VR!');
+            },
+            onExit     : () => {
+                this.reticle.reset();
+                this.popup.hide();
+            },
+        });
+    }
+
+    // ============================================================
+    //  [CONTROLLERS] 入力コントローラー初期化
+    // ============================================================
+
+    _initGyro() {
+        this.gyro.init();
+        if (!IS_SECURE) {
+            this.ui.showToast('HTTPS 未使用のためセンサーが使えません（スワイプのみ動作）');
+        }
+    }
+
+    _initTouch() {
+        this.touch.init((type) => {
+            // -------------------------------------------------------
+            // Cardboard ボタン / タップ 処理
+            //   type: 'tap'（短押し）| 'long'（長押し）| 'click'（PC）
+            //
+            //   将来のゲーム操作拡張はここへ追加する。
+            //   例: ジャンプ / 選択確定 / シーン遷移など
+            //   ModeManager で分岐して通常 / VR 別に処理できる。
+            // -------------------------------------------------------
+            if (CONFIG.DEBUG) console.log('[Input] Tap:', type);
+
+            if (this.mode.isVR()) {
+                this.ui.showExitBtn();         // 終了ボタンを一時表示
+                this.gaze.triggerCurrent();    // Gaze 即時トリガー
+            }
+            // 通常モード: タップでも即時トリガー可能
+            // (有効にする場合は else { this.gaze.triggerCurrent(); } を追加)
+        });
+    }
+
+    // ============================================================
+    //  [MODE] モード切替ハンドラ
+    // ============================================================
+
+    _initModeHandlers() {
+        this.mode.onChange((newMode) => this._applyMode(newMode));
+    }
+
+    _applyMode(mode) {
+        if (mode === 'vr') {
+            this.touch.disableSwipe();   // VRモード: スワイプ無効（ジャイロのみ）
+            this.ui.showVRUI();
+            this.ui.checkOrientation(true);
+        } else {
+            this.touch.enableSwipe();    // 通常モード: スワイプ有効
+            this.ui.showNormalUI();
+        }
+    }
+
+    // ============================================================
+    //  [UI] ボタンイベント
+    // ============================================================
+
+    _initUI() {
+        document.getElementById('btn-vr-start')?.addEventListener('click', () => this.switchToVR());
+        document.getElementById('btn-vr-exit')?.addEventListener('click',  () => this.switchToNormal());
+    }
+
+    // ============================================================
+    //  [RESIZE] リサイズ / 画面回転ハンドラ
+    // ============================================================
+
+    _initResize() {
+        window.addEventListener('resize', () => {
+            this.renderer.resize();
+            this.ui.checkOrientation(this.mode.isVR());
+        });
+    }
+
+    /** Android 戻るボタンなどで Fullscreen が解除された場合に通常モードへ */
+    _initFullscreenExitDetect() {
+        const handler = () => {
+            const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement);
+            if (!isFS && this.mode.isVR()) this.mode.setNormal();
         };
+        document.addEventListener('fullscreenchange',       handler);
+        document.addEventListener('webkitfullscreenchange', handler);
+    }
 
-        set('dbg-https',     IS_SECURE ? 'OK ✅' : 'NG ❌', IS_SECURE ? 'dbg-ok' : 'dbg-err');
-        set('dbg-events',    this._dbg.eventCount);
-        set('dbg-evtype',    this._dbg.lastEventType);
-        set('dbg-hasGyro',   this.hasGyro, this.hasGyro ? 'dbg-ok' : 'dbg-warn');
+    // ============================================================
+    //  [FULLSCREEN] Fullscreen API
+    // ============================================================
 
-        const d = this.deviceOrientation;
-        set('dbg-alpha',     d.alpha != null ? d.alpha.toFixed(1) : '-');
-        set('dbg-beta',      d.beta  != null ? d.beta.toFixed(1)  : '-');
-        set('dbg-gamma',     d.gamma != null ? d.gamma.toFixed(1) : '-');
-        set('dbg-screenOri', this.screenOrientation);
-        set('dbg-offset',    this._initialQInv ? 'SET ✅' : 'pending',
-                             this._initialQInv ? 'dbg-ok' : 'dbg-warn');
+    async _requestFullscreen() {
+        const el = document.documentElement;
+        try {
+            if      (el.requestFullscreen)       await el.requestFullscreen();
+            else if (el.webkitRequestFullscreen) await el.webkitRequestFullscreen();
+            else if (el.mozRequestFullScreen)    await el.mozRequestFullScreen();
+            else this.ui.showToast('この端末は全画面表示に対応していません');
+        } catch (e) {
+            if (CONFIG.DEBUG) console.warn('[VR] Fullscreen failed:', e);
+            this.ui.showToast('全画面表示できません。ブラウザメニューから設定してください。');
+        }
+    }
 
-        const q = this.camera.quaternion;
-        set('dbg-quat',  `${q.x.toFixed(2)},${q.y.toFixed(2)},${q.z.toFixed(2)},${q.w.toFixed(2)}`);
-        set('dbg-gaze',  STATE.gazeTarget ? 'HIT ✅' : '-', STATE.gazeTarget ? 'dbg-ok' : '');
-        set('dbg-frame', this._dbg.frameCount);
+    // ============================================================
+    //  [CAMERA] 毎フレームのカメラ姿勢更新
+    //   ジャイロが有効なら優先、なければスワイプを使用。
+    // ============================================================
+
+    _updateCamera() {
+        const q = this.gyro.getQuaternion();
+        if (q) {
+            this.camera.quaternion.copy(q);
+        } else if (CONFIG.ENABLE_TOUCH) {
+            this.camera.lookAt(this.touch.getLookTarget());
+        }
     }
 
     // ============================================================
@@ -869,43 +1075,42 @@ class VRApp {
 
     _animate() {
         requestAnimationFrame(() => this._animate());
-        this._dbg.frameCount++;
+        this._frameCount++;
 
-        this.updateCameraRotation();        // 1. カメラ姿勢
-        this.updateGaze();                  // 2. Gaze 判定
-        if (this.cube) {                    // 3. オブジェクトアニメーション
+        this._updateCamera();        // 1. カメラ姿勢（ジャイロ / スワイプ）
+
+        this.gaze.update();          // 2. Gaze 判定
+
+        if (this.cube) {             // 3. オブジェクトアニメーション
             this.cube.rotation.x += CONFIG.CUBE_SPIN_SPEED;
             this.cube.rotation.y += CONFIG.CUBE_SPIN_SPEED;
         }
-        this._renderStereo();               // 4. ステレオ描画（常時 VR モード）
-        this._updateDebug();                // 5. デバッグ（非表示時はほぼノーコスト）
+
+        // 4. 描画
+        //    通常モード: 単眼描画（軽量）
+        //    VRモード  : ステレオ描画（ENABLE_STEREO = true の場合）
+        if (this.mode.isVR() && CONFIG.ENABLE_STEREO) {
+            this.renderer.renderStereo();
+        } else {
+            this.renderer.renderMono();
+        }
+
+        // 5. デバッグパネル更新（CONFIG.DEBUG = false のときは即 return）
+        this.debug.update({
+            mode       : this.mode.getMode(),
+            gyro       : this.gyro,
+            gaze       : this.gaze,
+            camera     : this.camera,
+            frameCount : this._frameCount,
+        });
     }
 }
 
 // ================================================================
-// ■ STARTUP — 起動処理
+// ■ STARTUP — ページロード直後に通常モードで起動
 // ================================================================
 const app = new VRApp();
-
-document.getElementById('start-btn').addEventListener('click', async () => {
-    document.getElementById('welcome-modal').style.display = 'none';
-
-    // Fullscreen リクエスト（Chrome URL バーを隠す）
-    await app.requestFullscreen();
-
-    // iOS 13+ はジャイロセンサーへのアクセスに明示的な許可が必要
-    if (typeof DeviceOrientationEvent !== 'undefined' &&
-        typeof DeviceOrientationEvent.requestPermission === 'function') {
-        try {
-            const perm = await DeviceOrientationEvent.requestPermission();
-            if (CONFIG.DEBUG) console.log('[VR] iOS sensor permission:', perm);
-        } catch (e) {
-            console.warn('[VR] iOS permission error:', e);
-        }
-    }
-
-    app.init();
-});
+app.init();
 </script>
 </body>
 </html>
